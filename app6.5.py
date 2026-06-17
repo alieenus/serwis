@@ -261,22 +261,22 @@ def sprawdz_warunek_kurs(uzyj, okres, relacja, ref, row_d, row_w, df_d):
         return abs(kurs - ref_val) / ref_val <= TOL if ref_val != 0 else False
     return False
 
-def wykryj_crossover_ema(df):
+def wykryj_crossover_ema(df, ema_szybka="EMA20", ema_wolna="EMA50"):
     """
-    Sprawdza przecięcie EMA20/EMA50 na ostatniej sesji vs sesja wczoraj.
-    Zwraca: "up" (EMA20 przecina EMA50 od dolu, sygnal bycz.),
-            "down" (EMA20 przecina EMA50 od gory, sygnal niedźw.),
-            None (brak przeciecia na ostatniej sesji).
+    Sprawdza przeciecie dwóch wskazanych EMA na ostatniej sesji vs sesja
+    poprzednia. Zwraca: "up" (szybka przecina wolna od dolu, sygnal bycz.),
+    "down" (szybka przecina wolna od gory, sygnal niedźw.),
+    None (brak przeciecia na ostatniej sesji).
     """
     if len(df) < 2:
         return None
-    e20_now,  e50_now  = df["EMA20"].iloc[-1], df["EMA50"].iloc[-1]
-    e20_prev, e50_prev = df["EMA20"].iloc[-2], df["EMA50"].iloc[-2]
-    if pd.isna(e20_now) or pd.isna(e50_now) or pd.isna(e20_prev) or pd.isna(e50_prev):
+    e_now_f,  e_now_w  = df[ema_szybka].iloc[-1], df[ema_wolna].iloc[-1]
+    e_prev_f, e_prev_w = df[ema_szybka].iloc[-2], df[ema_wolna].iloc[-2]
+    if pd.isna(e_now_f) or pd.isna(e_now_w) or pd.isna(e_prev_f) or pd.isna(e_prev_w):
         return None
-    if e20_prev <= e50_prev and e20_now > e50_now:
+    if e_prev_f <= e_prev_w and e_now_f > e_now_w:
         return "up"
-    if e20_prev >= e50_prev and e20_now < e50_now:
+    if e_prev_f >= e_prev_w and e_now_f < e_now_w:
         return "down"
     return None
 
@@ -650,6 +650,7 @@ else:
     war_ema2 = st.sidebar.checkbox("EMA50 > EMA150",           value=False)
     war_ema3 = st.sidebar.checkbox("EMA150 +/-0.5% od EMA200", value=False)
     war_cross20_50 = st.sidebar.checkbox("Cross EMA20/50", value=False)
+    war_cross150_200 = st.sidebar.checkbox("Cross EMA150/200", value=False)
 
     # ── WOLUMEN ───────────────────────────────────────
     st.sidebar.markdown("### 📊 Wolumen")
@@ -765,9 +766,11 @@ else:
                 # EMA
                 if not sprawdz_ema_warunki(row, war_ema1, war_ema2, war_ema3): continue
 
-                # crossover EMA20/EMA50
-                cross = wykryj_crossover_ema(df)
-                if war_cross20_50 and cross is None: continue
+                # crossover EMA20/EMA50 i EMA150/EMA200
+                cross_20_50   = wykryj_crossover_ema(df, "EMA20", "EMA50")
+                cross_150_200 = wykryj_crossover_ema(df, "EMA150", "EMA200")
+                if war_cross20_50 and cross_20_50 is None: continue
+                if war_cross150_200 and cross_150_200 is None: continue
 
                 # wolumen dzienny
                 if not sprawdz_wolumen_dzienny(row, uzyj_vol_d, mnoznik_d): continue
@@ -833,15 +836,10 @@ else:
 
                 odch_val = float('nan')
                 vd_val   = float('nan')
-                vw_val   = float('nan')
                 if not pd.isna(e150) and not pd.isna(e200) and e200 != 0:
                     odch_val = (float(e150) - float(e200)) / float(e200) * 100
                 if not pd.isna(vol_d) and not pd.isna(avg_d) and avg_d != 0:
                     vd_val = float(vol_d)/float(avg_d)
-                if row_w is not None:
-                    vw = row_w.get("Volume"); aw = row_w.get("VOL_AVG52W")
-                    if not pd.isna(vw) and not pd.isna(aw) and aw != 0:
-                        vw_val = float(vw)/float(aw)
 
                 adr20 = row.get("ADR20")
                 kurs_val = float(row["Close"])
@@ -850,6 +848,9 @@ else:
                 decimals = len(kurs_raw.split('.')[1]) if '.' in kurs_raw else 0
                 decimals = max(decimals, 2)
                 kurs_fmt = round(kurs_val, decimals)
+                cross_20_50_txt   = {"up": "▲", "down": "▼"}.get(cross_20_50, "—")
+                cross_150_200_txt = {"up": "▲", "down": "▼"}.get(cross_150_200, "—")
+
                 wyniki.append({
                     "Ticker":         t,
                     "Gielda":         {"GPW": "G", "NC": "N"}.get(rynek_t, rynek_t),
@@ -862,8 +863,8 @@ else:
                     "RSI":            float(rsi) if not pd.isna(rsi) else float('nan'),
                     "EMA150vsEMA200": odch_val,
                     "Vol/Sr.60D":     vd_val,
-                    "Vol/Sr.52W":     vw_val,
-                    "Cross EMA20/50": {"up": "▲", "down": "▼"}.get(cross, "—"),
+                    "Cross 20/50":    cross_20_50_txt,
+                    "Cross 150/200":  cross_150_200_txt,
                 })
 
             except Exception:
@@ -895,9 +896,12 @@ else:
                         if v >= 0:  return "color: #4ade80; font-weight:600"
                         return "color: #f87171; font-weight:600"
                     except (TypeError, ValueError): pass
-                if kolumna == "Cross EMA20/50":
+                if kolumna == "Cross 20/50":
                     if val == "▲": return "color: #4ade80; font-weight:700; font-size:1.1em"
                     if val == "▼": return "color: #f87171; font-weight:700; font-size:1.1em"
+                if kolumna == "Cross 150/200":
+                    if val == "▲": return "color: #60a5fa; font-weight:700; font-size:1.1em"
+                    if val == "▼": return "color: #60a5fa; font-weight:700; font-size:1.1em"
                 return ""
 
             FORMAT_KOLUMN = {
@@ -908,7 +912,6 @@ else:
                 "RSI":            "{:.0f}",
                 "EMA150vsEMA200": "{:+.2f}%",
                 "Vol/Sr.60D":     "{:.1f}x",
-                "Vol/Sr.52W":     "{:.1f}x",
             }
 
             styled = (
