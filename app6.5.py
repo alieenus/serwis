@@ -261,24 +261,34 @@ def sprawdz_warunek_kurs(uzyj, okres, relacja, ref, row_d, row_w, df_d):
         return abs(kurs - ref_val) / ref_val <= TOL if ref_val != 0 else False
     return False
 
-def wykryj_crossover_ema(df, ema_szybka="EMA20", ema_wolna="EMA50"):
+def wykryj_crossover_ema(df, ema_szybka="EMA20", ema_wolna="EMA50",
+                          data_od=None, data_do=None):
     """
-    Sprawdza przeciecie dwóch wskazanych EMA na ostatniej sesji vs sesja
-    poprzednia. Zwraca: "up" (szybka przecina wolna od dolu, sygnal bycz.),
-    "down" (szybka przecina wolna od gory, sygnal niedźw.),
-    None (brak przeciecia na ostatniej sesji).
+    Sprawdza przeciecie dwóch wskazanych EMA.
+    Jesli data_od/data_do podane, przeszukuje caly ten zakres kalendarzowy
+    i zwraca (kierunek, data_sygnalu) dla NAJNOWSZEGO znalezionego przeciecia.
+    Jesli nie podane, sprawdza tylko ostatnia sesje vs poprzednia.
+    Zwraca: (kierunek, data) gdzie kierunek to "up"/"down"/None,
+            data to obiekt date sygnalu (lub None jesli brak).
     """
-    if len(df) < 2:
-        return None
-    e_now_f,  e_now_w  = df[ema_szybka].iloc[-1], df[ema_wolna].iloc[-1]
-    e_prev_f, e_prev_w = df[ema_szybka].iloc[-2], df[ema_wolna].iloc[-2]
-    if pd.isna(e_now_f) or pd.isna(e_now_w) or pd.isna(e_prev_f) or pd.isna(e_prev_w):
-        return None
-    if e_prev_f <= e_prev_w and e_now_f > e_now_w:
-        return "up"
-    if e_prev_f >= e_prev_w and e_now_f < e_now_w:
-        return "down"
-    return None
+    f = df[ema_szybka]
+    w = df[ema_wolna]
+    if data_od is not None and data_do is not None:
+        maska = (df.index.date >= data_od) & (df.index.date <= data_do)
+        indeksy = [i for i in range(1, len(df)) if maska[i]]
+    else:
+        indeksy = [len(df) - 1] if len(df) >= 2 else []
+
+    for i in reversed(indeksy):  # od najnowszego do najstarszego
+        f_now, w_now   = f.iloc[i],   w.iloc[i]
+        f_prev, w_prev = f.iloc[i-1], w.iloc[i-1]
+        if pd.isna(f_now) or pd.isna(w_now) or pd.isna(f_prev) or pd.isna(w_prev):
+            continue
+        if f_prev <= w_prev and f_now > w_now:
+            return "up", df.index[i].date()
+        if f_prev >= w_prev and f_now < w_now:
+            return "down", df.index[i].date()
+    return None, None
 
 def kurs_na_poczatek_okresu(df, data_referencyjna, okres):
     """
@@ -650,7 +660,26 @@ else:
     war_ema2 = st.sidebar.checkbox("EMA50 > EMA150",           value=False)
     war_ema3 = st.sidebar.checkbox("EMA150 +/-0.5% od EMA200", value=False)
     war_cross20_50 = st.sidebar.checkbox("Cross EMA20/50", value=False)
+    if war_cross20_50:
+        zakres_cross20_50 = st.sidebar.date_input(
+            "Szukaj w zakresie:", value=(data_skan, data_skan),
+            key="zakres_2050", format="DD.MM.YYYY"
+        )
+        if isinstance(zakres_cross20_50, (list, tuple)) and len(zakres_cross20_50) == 2:
+            cross20_50_od, cross20_50_do = zakres_cross20_50
+        else:
+            cross20_50_od = cross20_50_do = data_skan
+
     war_cross150_200 = st.sidebar.checkbox("Cross EMA150/200", value=False)
+    if war_cross150_200:
+        zakres_cross150_200 = st.sidebar.date_input(
+            "Szukaj w zakresie:", value=(data_skan, data_skan),
+            key="zakres_150200", format="DD.MM.YYYY"
+        )
+        if isinstance(zakres_cross150_200, (list, tuple)) and len(zakres_cross150_200) == 2:
+            cross150_200_od, cross150_200_do = zakres_cross150_200
+        else:
+            cross150_200_od = cross150_200_do = data_skan
 
     # ── WOLUMEN ───────────────────────────────────────
     st.sidebar.markdown("### 📊 Wolumen")
@@ -767,8 +796,18 @@ else:
                 if not sprawdz_ema_warunki(row, war_ema1, war_ema2, war_ema3): continue
 
                 # crossover EMA20/EMA50 i EMA150/EMA200
-                cross_20_50   = wykryj_crossover_ema(df, "EMA20", "EMA50")
-                cross_150_200 = wykryj_crossover_ema(df, "EMA150", "EMA200")
+                if war_cross20_50:
+                    cross_20_50, data_cross_20_50 = wykryj_crossover_ema(
+                        df, "EMA20", "EMA50", cross20_50_od, cross20_50_do)
+                else:
+                    cross_20_50, data_cross_20_50 = wykryj_crossover_ema(df, "EMA20", "EMA50")
+
+                if war_cross150_200:
+                    cross_150_200, data_cross_150_200 = wykryj_crossover_ema(
+                        df, "EMA150", "EMA200", cross150_200_od, cross150_200_do)
+                else:
+                    cross_150_200, data_cross_150_200 = wykryj_crossover_ema(df, "EMA150", "EMA200")
+
                 if war_cross20_50 and cross_20_50 is None: continue
                 if war_cross150_200 and cross_150_200 is None: continue
 
@@ -850,6 +889,8 @@ else:
                 kurs_fmt = round(kurs_val, decimals)
                 cross_20_50_txt   = {"up": "▲", "down": "▼"}.get(cross_20_50, "—")
                 cross_150_200_txt = {"up": "▲", "down": "▼"}.get(cross_150_200, "—")
+                data_cross_20_50_txt   = data_cross_20_50.strftime("%d.%m")   if data_cross_20_50   else "—"
+                data_cross_150_200_txt = data_cross_150_200.strftime("%d.%m") if data_cross_150_200 else "—"
 
                 wyniki.append({
                     "Ticker":         t,
@@ -864,7 +905,9 @@ else:
                     "EMA150vsEMA200": odch_val,
                     "Vol/Sr.60D":     vd_val,
                     "Cross 20/50":    cross_20_50_txt,
+                    "Data 20/50":     data_cross_20_50_txt,
                     "Cross 150/200":  cross_150_200_txt,
+                    "Data 150/200":   data_cross_150_200_txt,
                 })
 
             except Exception:
