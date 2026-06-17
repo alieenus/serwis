@@ -261,6 +261,22 @@ def sprawdz_warunek_kurs(uzyj, okres, relacja, ref, row_d, row_w, df_d):
         return abs(kurs - ref_val) / ref_val <= TOL if ref_val != 0 else False
     return False
 
+def kurs_na_poczatek_okresu(df, data_referencyjna, okres):
+    """
+    Zwraca kurs zamknięcia z ostatniej sesji PRZED początkiem bieżącego
+    okresu kalendarzowego (tydzien: od poniedziałku; miesiac: od 1-go dnia).
+    Jeśli takiej sesji nie ma w danych (za krótka historia), zwraca None.
+    """
+    if okres == "tydzien":
+        poczatek = data_referencyjna - timedelta(days=data_referencyjna.weekday())  # poniedziałek
+    else:  # miesiac
+        poczatek = data_referencyjna.replace(day=1)
+
+    df_przed = df[df.index.date < poczatek]
+    if df_przed.empty:
+        return None
+    return float(df_przed["Close"].iloc[-1])
+
 def wykryj_doji(row, tolerancja_pct=0.1):
     h, l = float(row["High"]), float(row["Low"])
     zakres = h - l
@@ -282,6 +298,26 @@ def wykryj_bycza_swiece(row, min_body_pct=3.0, max_dolny_cien_pct=30.0):
 # ══════════════════════════════════════════════════════════════════════════════
 st.set_page_config(page_title="Moj serwis GPW", layout="wide")
 st.title("Moj serwis GPW")
+
+# ── TEST: data ostatniego rekordu w bazie (PKN, PKO) ──────────────────
+with st.expander("🔧 Status bazy danych (test)", expanded=True):
+    dzis = date.today()
+    for t in ["PKN", "PKO"]:
+        df_test = wczytaj_notowania(t)
+        if df_test.empty:
+            st.warning(f"{t}: brak danych w bazie")
+        else:
+            ostatnia = df_test.index[-1].date()
+            roznica = (dzis - ostatnia).days
+            if roznica <= 0:
+                znacznik = "✅ aktualne (dzisiaj)"
+            elif roznica == 1:
+                znacznik = "✅ aktualne (wczoraj)"
+            elif roznica <= 4:
+                znacznik = f"⚠️ {roznica} dni temu (mogło nie być sesji / weekend)"
+            else:
+                znacznik = f"❌ {roznica} dni temu — baza nieaktualizowana!"
+            st.write(f"**{t}**: ostatni rekord z **{ostatnia.strftime('%Y-%m-%d')}** — {znacznik}")
 
 st.sidebar.markdown("# 🗂️ Nawigacja")
 nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Moje spolki", "📡 Skaner"])
@@ -679,6 +715,7 @@ else:
 
                 # zmiany kursu
                 kurs_teraz = float(row["Close"])
+                data_sesji = row.name.date() if hasattr(row.name, "date") else df.index[-1].date()
                 zm_d_val = zm_w_val = zm_m_val = float('nan')
 
                 if len(df) >= 2:
@@ -691,24 +728,24 @@ else:
                                     (True if max_zm_d== 20 else zm_d<=max_zm_d)): continue
                 elif uzyj_zmiana_d: continue
 
-                if len(df) >= 5:
-                    k = float(df["Close"].iloc[-5])
-                    if k != 0:
-                        zm_w = (kurs_teraz - k) / k * 100
-                        zm_w_val = zm_w
-                        if uzyj_zmiana_w:
-                            if not ((True if min_zm_w==-20 else zm_w>=min_zm_w) and
-                                    (True if max_zm_w== 20 else zm_w<=max_zm_w)): continue
+                # Zmiana 1W: od ostatniej sesji PRZED poniedziałkiem bieżącego tygodnia
+                k = kurs_na_poczatek_okresu(df, data_sesji, "tydzien")
+                if k is not None and k != 0:
+                    zm_w = (kurs_teraz - k) / k * 100
+                    zm_w_val = zm_w
+                    if uzyj_zmiana_w:
+                        if not ((True if min_zm_w==-20 else zm_w>=min_zm_w) and
+                                (True if max_zm_w== 20 else zm_w<=max_zm_w)): continue
                 elif uzyj_zmiana_w: continue
 
-                if len(df) >= 20:
-                    k = float(df["Close"].iloc[-20])
-                    if k != 0:
-                        zm_m = (kurs_teraz - k) / k * 100
-                        zm_m_val = zm_m
-                        if uzyj_zmiana_m:
-                            if not ((True if min_zm_m==-20 else zm_m>=min_zm_m) and
-                                    (True if max_zm_m== 20 else zm_m<=max_zm_m)): continue
+                # Zmiana 1M: od ostatniej sesji PRZED 1-szym dniem bieżącego miesiąca
+                k = kurs_na_poczatek_okresu(df, data_sesji, "miesiac")
+                if k is not None and k != 0:
+                    zm_m = (kurs_teraz - k) / k * 100
+                    zm_m_val = zm_m
+                    if uzyj_zmiana_m:
+                        if not ((True if min_zm_m==-20 else zm_m>=min_zm_m) and
+                                (True if max_zm_m== 20 else zm_m<=max_zm_m)): continue
                 elif uzyj_zmiana_m: continue
 
                 # wolumen ratios
