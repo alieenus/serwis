@@ -592,16 +592,33 @@ else:
 
     # ── DATA ──────────────────────────────────────────
     st.sidebar.markdown("### 📅 Data skanowania")
-    data_skan = st.sidebar.date_input(
-        "Sprawdz sygnaly na dzien:",
-        value=date.today(),
-        min_value=date.today() - timedelta(days=730),
-        max_value=date.today(),
-    )
-    if isinstance(data_skan, (list, tuple)):
-        data_skan = data_skan[0]
+    typ_daty = st.sidebar.radio("", ["Dzień", "Zakres dat"], horizontal=True, label_visibility="collapsed")
+
+    if typ_daty == "Dzień":
+        data_skan = st.sidebar.date_input(
+            "Sprawdz sygnaly na dzien:",
+            value=date.today(),
+            min_value=date.today() - timedelta(days=730),
+            max_value=date.today(),
+        )
+        if isinstance(data_skan, (list, tuple)):
+            data_skan = data_skan[0]
+        zakres_od, zakres_do = data_skan, data_skan
+    else:
+        zakres_wybrany = st.sidebar.date_input(
+            "Sprawdz sygnaly w zakresie:",
+            value=(date.today() - timedelta(days=7), date.today()),
+            min_value=date.today() - timedelta(days=730),
+            max_value=date.today(),
+        )
+        if isinstance(zakres_wybrany, (list, tuple)) and len(zakres_wybrany) == 2:
+            zakres_od, zakres_do = zakres_wybrany
+        else:
+            zakres_od = zakres_do = date.today()
+        data_skan = zakres_do  # koniec zakresu jako "dzień referencyjny"
+
     if data_skan < date.today():
-        st.sidebar.info(f"Tryb historyczny: {data_skan.strftime('%d.%m.%Y')}")
+        st.sidebar.info(f"Tryb historyczny: do {data_skan.strftime('%d.%m.%Y')}")
 
     # ── RYNEK ─────────────────────────────────────────
     st.sidebar.markdown("### 🌍 Rynek")
@@ -660,26 +677,7 @@ else:
     war_ema2 = st.sidebar.checkbox("EMA50 > EMA150",           value=False)
     war_ema3 = st.sidebar.checkbox("EMA150 +/-0.5% od EMA200", value=False)
     war_cross20_50 = st.sidebar.checkbox("Cross EMA20/50", value=False)
-    if war_cross20_50:
-        zakres_cross20_50 = st.sidebar.date_input(
-            "Szukaj w zakresie:", value=(data_skan, data_skan),
-            key="zakres_2050", format="DD.MM.YYYY"
-        )
-        if isinstance(zakres_cross20_50, (list, tuple)) and len(zakres_cross20_50) == 2:
-            cross20_50_od, cross20_50_do = zakres_cross20_50
-        else:
-            cross20_50_od = cross20_50_do = data_skan
-
     war_cross150_200 = st.sidebar.checkbox("Cross EMA150/200", value=False)
-    if war_cross150_200:
-        zakres_cross150_200 = st.sidebar.date_input(
-            "Szukaj w zakresie:", value=(data_skan, data_skan),
-            key="zakres_150200", format="DD.MM.YYYY"
-        )
-        if isinstance(zakres_cross150_200, (list, tuple)) and len(zakres_cross150_200) == 2:
-            cross150_200_od, cross150_200_do = zakres_cross150_200
-        else:
-            cross150_200_od = cross150_200_do = data_skan
 
     # ── WOLUMEN ───────────────────────────────────────
     st.sidebar.markdown("### 📊 Wolumen")
@@ -796,17 +794,10 @@ else:
                 if not sprawdz_ema_warunki(row, war_ema1, war_ema2, war_ema3): continue
 
                 # crossover EMA20/EMA50 i EMA150/EMA200
-                if war_cross20_50:
-                    cross_20_50, data_cross_20_50 = wykryj_crossover_ema(
-                        df, "EMA20", "EMA50", cross20_50_od, cross20_50_do)
-                else:
-                    cross_20_50, data_cross_20_50 = wykryj_crossover_ema(df, "EMA20", "EMA50")
-
-                if war_cross150_200:
-                    cross_150_200, data_cross_150_200 = wykryj_crossover_ema(
-                        df, "EMA150", "EMA200", cross150_200_od, cross150_200_do)
-                else:
-                    cross_150_200, data_cross_150_200 = wykryj_crossover_ema(df, "EMA150", "EMA200")
+                cross_20_50, data_cross_20_50 = wykryj_crossover_ema(
+                    df, "EMA20", "EMA50", zakres_od, zakres_do)
+                cross_150_200, data_cross_150_200 = wykryj_crossover_ema(
+                    df, "EMA150", "EMA200", zakres_od, zakres_do)
 
                 if war_cross20_50 and cross_20_50 is None: continue
                 if war_cross150_200 and cross_150_200 is None: continue
@@ -882,17 +873,13 @@ else:
 
                 adr20 = row.get("ADR20")
                 kurs_val = float(row["Close"])
-                # Min 2 miejsca po przecinku; więcej jeśli kurs ma istotne cyfry; bez trailing zeros
-                kurs_raw = f"{kurs_val:.4f}".rstrip('0')
-                decimals = len(kurs_raw.split('.')[1]) if '.' in kurs_raw else 0
-                decimals = max(decimals, 2)
-                kurs_fmt = round(kurs_val, decimals)
+                kurs_fmt = round(kurs_val, 3)
                 cross_20_50_txt   = {"up": "▲", "down": "▼"}.get(cross_20_50, "—")
                 cross_150_200_txt = {"up": "▲", "down": "▼"}.get(cross_150_200, "—")
                 data_cross_20_50_txt   = data_cross_20_50.strftime("%d.%m")   if data_cross_20_50   else "—"
                 data_cross_150_200_txt = data_cross_150_200.strftime("%d.%m") if data_cross_150_200 else "—"
 
-                wyniki.append({
+                wynik_wiersz = {
                     "Ticker":         t,
                     "Gielda":         {"GPW": "G", "NC": "N"}.get(rynek_t, rynek_t),
                     "Kategoria":      TICKER_INFO.get(t, {}).get("kategoria", "—"),
@@ -905,10 +892,15 @@ else:
                     "EMA150vsEMA200": odch_val,
                     "Vol/Sr.60D":     vd_val,
                     "Cross 20/50":    cross_20_50_txt,
-                    "Data 20/50":     data_cross_20_50_txt,
-                    "Cross 150/200":  cross_150_200_txt,
-                    "Data 150/200":   data_cross_150_200_txt,
-                })
+                }
+                if typ_daty == "Zakres dat":
+                    wynik_wiersz["Data 20/50"] = data_cross_20_50_txt
+                if war_cross150_200:
+                    wynik_wiersz["Cross 150/200"] = cross_150_200_txt
+                    if typ_daty == "Zakres dat":
+                        wynik_wiersz["Data 150/200"] = data_cross_150_200_txt
+
+                wyniki.append(wynik_wiersz)
 
             except Exception:
                 bledy += 1
