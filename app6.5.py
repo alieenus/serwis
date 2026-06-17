@@ -530,56 +530,133 @@ elif nav == "📋 Moje spolki":
 # ZAKŁADKA 3 — TOP (najbardziej rosnące / spadające w 5 sesji)
 # ══════════════════════════════════════════════════════════════════════════════
 elif nav == "🏆 Top":
-    st.header("Top 10 — zmiana w ostatnich 5 sesjach")
-    st.caption("Bazuje na liście all GPW+NC (yfinance)")
+    st.header("Top — gotowe listy")
 
-    wyniki_top = []
-    pasek_top = st.progress(0, text="Liczenie zmian...")
-    lista_top = DOSTEPNE_YFINANCE
-    for i, s in enumerate(lista_top):
-        pasek_top.progress((i+1)/max(len(lista_top),1), text=f"Sprawdzam: {s['ticker']}")
-        df_t = wczytaj_notowania(s["ticker"])
-        if len(df_t) < 6:
-            continue
-        k_teraz = float(df_t["Close"].iloc[-1])
-        k_5sesji = float(df_t["Close"].iloc[-6])
-        if k_5sesji == 0:
-            continue
-        zmiana = (k_teraz - k_5sesji) / k_5sesji * 100
-        wyniki_top.append({
-            "Ticker": s["ticker"],
-            "Gielda": {"GPW": "G", "NC": "N"}.get(s["rynek"], s["rynek"]),
-            "Kurs": k_teraz,
-            "Zmiana 5D (%)": zmiana,
-        })
-    pasek_top.empty()
+    if "top_widok" not in st.session_state:
+        st.session_state["top_widok"] = None
 
-    if not wyniki_top:
-        st.warning("Brak danych do obliczenia (sprawdz baze dane_gpw.db).")
-    else:
-        df_top = pd.DataFrame(wyniki_top)
-        top_rosnace  = df_top.sort_values("Zmiana 5D (%)", ascending=False).head(10).reset_index(drop=True)
-        top_spadajace = df_top.sort_values("Zmiana 5D (%)", ascending=True).head(10).reset_index(drop=True)
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        if st.button("📊 Naj/Naj", use_container_width=True):
+            st.session_state["top_widok"] = "naj_naj"
+    with col_b2:
+        if st.button("🔀 Cross 20/50 (3 sesje)", use_container_width=True):
+            st.session_state["top_widok"] = "cross_20_50"
 
-        def styl_top(df_, kolor):
-            return (
-                df_.style
-                .format({"Kurs": "{:.2f}", "Zmiana 5D (%)": "{:+.1f}%"})
-                .apply(lambda col: [f"color: {kolor}; font-weight:600" if col.name=="Zmiana 5D (%)" else "" for _ in col], axis=0)
+    st.markdown("---")
+
+    # ── LISTA 1: NAJ/NAJ ──────────────────────────────────────────────
+    if st.session_state["top_widok"] == "naj_naj":
+        st.subheader("Top 10 — zmiana w ostatnich 5 sesjach")
+        st.caption("Bazuje na liście all GPW+NC (yfinance)")
+
+        wyniki_top = []
+        pasek_top = st.progress(0, text="Liczenie zmian...")
+        lista_top = DOSTEPNE_YFINANCE
+        for i, s in enumerate(lista_top):
+            pasek_top.progress((i+1)/max(len(lista_top),1), text=f"Sprawdzam: {s['ticker']}")
+            df_t = wczytaj_notowania(s["ticker"])
+            if len(df_t) < 6:
+                continue
+            k_teraz = float(df_t["Close"].iloc[-1])
+            k_5sesji = float(df_t["Close"].iloc[-6])
+            if k_5sesji == 0:
+                continue
+            zmiana = (k_teraz - k_5sesji) / k_5sesji * 100
+            wyniki_top.append({
+                "Ticker": s["ticker"],
+                "Gielda": {"GPW": "G", "NC": "N"}.get(s["rynek"], s["rynek"]),
+                "Kurs": k_teraz,
+                "Zmiana 5D (%)": zmiana,
+            })
+        pasek_top.empty()
+
+        if not wyniki_top:
+            st.warning("Brak danych do obliczenia (sprawdz baze dane_gpw.db).")
+        else:
+            df_top = pd.DataFrame(wyniki_top)
+            top_rosnace  = df_top.sort_values("Zmiana 5D (%)", ascending=False).head(10).reset_index(drop=True)
+            top_spadajace = df_top.sort_values("Zmiana 5D (%)", ascending=True).head(10).reset_index(drop=True)
+
+            def styl_top(df_, kolor):
+                return (
+                    df_.style
+                    .format({"Kurs": "{:.3f}", "Zmiana 5D (%)": "{:+.1f}%"})
+                    .apply(lambda col: [f"color: {kolor}; font-weight:600" if col.name=="Zmiana 5D (%)" else "" for _ in col], axis=0)
+                )
+
+            col_lewa, col_sep, col_prawa = st.columns([10, 1, 10])
+            with col_lewa:
+                st.subheader("📈 Najbardziej rosnące")
+                st.dataframe(styl_top(top_rosnace, "#4ade80"), use_container_width=True, hide_index=True)
+            with col_sep:
+                st.markdown(
+                    "<div style='border-left:3px solid #888; height:420px; margin:38px auto 0;'></div>",
+                    unsafe_allow_html=True
+                )
+            with col_prawa:
+                st.subheader("📉 Najbardziej spadające")
+                st.dataframe(styl_top(top_spadajace, "#f87171"), use_container_width=True, hide_index=True)
+
+    # ── LISTA 2: CROSS 20/50 (ostatnie 3 sesje) ───────────────────────
+    elif st.session_state["top_widok"] == "cross_20_50":
+        st.subheader("Cross EMA20/50 — ostatnie 3 sesje")
+        st.caption("Bazuje na liście all GPW+NC (yfinance)")
+
+        wyniki_cross = []
+        pasek_cross = st.progress(0, text="Skanowanie...")
+        lista_cross = DOSTEPNE_YFINANCE
+        for i, s in enumerate(lista_cross):
+            pasek_cross.progress((i+1)/max(len(lista_cross),1), text=f"Sprawdzam: {s['ticker']}")
+            df_t = wczytaj_notowania(s["ticker"])
+            if len(df_t) < 51:
+                continue
+            df_t = licz_wskazniki(df_t)
+            if len(df_t) < 4:
+                continue
+
+            ostatnie_3_sesje = df_t.index[-3:]
+            sygnal_kierunek, sygnal_data = None, None
+            for sesja_data in reversed(ostatnie_3_sesje):
+                idx_sesji = df_t.index.get_loc(sesja_data)
+                if idx_sesji < 1:
+                    continue
+                f_now, w_now   = df_t["EMA20"].iloc[idx_sesji],   df_t["EMA50"].iloc[idx_sesji]
+                f_prev, w_prev = df_t["EMA20"].iloc[idx_sesji-1], df_t["EMA50"].iloc[idx_sesji-1]
+                if pd.isna(f_now) or pd.isna(w_now) or pd.isna(f_prev) or pd.isna(w_prev):
+                    continue
+                if f_prev <= w_prev and f_now > w_now:
+                    sygnal_kierunek, sygnal_data = "up", sesja_data.date()
+                    break
+                if f_prev >= w_prev and f_now < w_now:
+                    sygnal_kierunek, sygnal_data = "down", sesja_data.date()
+                    break
+
+            if sygnal_kierunek is not None:
+                sesje_temu = len(df_t) - 1 - df_t.index.get_loc(pd.Timestamp(sygnal_data))
+                wyniki_cross.append({
+                    "Ticker":  s["ticker"],
+                    "Gielda":  {"GPW": "G", "NC": "N"}.get(s["rynek"], s["rynek"]),
+                    "Kurs":    float(df_t["Close"].iloc[-1]),
+                    "Cross":   "▲" if sygnal_kierunek == "up" else "▼",
+                    "_sort":   sygnal_data,
+                    "Data":    f"{sygnal_data.strftime('%d.%m')} ({sesje_temu} sesj{'a' if sesje_temu==1 else 'e' if 2<=sesje_temu<=4 else 'i'} temu)",
+                })
+        pasek_cross.empty()
+
+        if not wyniki_cross:
+            st.info("Brak spolek z przecieciem EMA20/50 w ostatnich 3 sesjach.")
+        else:
+            df_cross = pd.DataFrame(wyniki_cross).sort_values("_sort", ascending=False).drop(columns=["_sort"]).reset_index(drop=True)
+            styled_cross = (
+                df_cross.style
+                .format({"Kurs": "{:.3f}"})
+                .apply(lambda col: [
+                    ("color: #4ade80; font-weight:700" if v == "▲" else "color: #f87171; font-weight:700")
+                    if col.name == "Cross" else "" for v in col
+                ], axis=0)
             )
-
-        col_lewa, col_sep, col_prawa = st.columns([10, 1, 10])
-        with col_lewa:
-            st.subheader("📈 Najbardziej rosnące")
-            st.dataframe(styl_top(top_rosnace, "#4ade80"), use_container_width=True, hide_index=True)
-        with col_sep:
-            st.markdown(
-                "<div style='border-left:3px solid #888; height:420px; margin:38px auto 0;'></div>",
-                unsafe_allow_html=True
-            )
-        with col_prawa:
-            st.subheader("📉 Najbardziej spadające")
-            st.dataframe(styl_top(top_spadajace, "#f87171"), use_container_width=True, hide_index=True)
+            st.dataframe(styled_cross, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ZAKŁADKA 4 — SKANER
