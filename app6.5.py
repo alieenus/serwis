@@ -319,8 +319,7 @@ with st.expander("🔧 Status bazy danych (test)", expanded=True):
                 znacznik = f"❌ {roznica} dni temu — baza nieaktualizowana!"
             st.write(f"**{t}**: ostatni rekord z **{ostatnia.strftime('%Y-%m-%d')}** — {znacznik}")
 
-st.sidebar.markdown("# 🗂️ Nawigacja")
-nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Moje spolki", "📡 Skaner"])
+nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Moje spolki", "🏆 Top", "📡 Skaner"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ZAKŁADKA 1 — SPÓŁKA
@@ -500,12 +499,66 @@ elif nav == "📋 Moje spolki":
             st.dataframe(df_kat[["Ticker","Gielda"]], use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ZAKŁADKA 3 — SKANER
+# ZAKŁADKA 3 — TOP (najbardziej rosnące / spadające w 5 sesji)
+# ══════════════════════════════════════════════════════════════════════════════
+elif nav == "🏆 Top":
+    st.header("Top 10 — zmiana w ostatnich 5 sesjach")
+    st.caption("Bazuje na liście all GPW+NC (yfinance)")
+
+    wyniki_top = []
+    pasek_top = st.progress(0, text="Liczenie zmian...")
+    lista_top = DOSTEPNE_YFINANCE
+    for i, s in enumerate(lista_top):
+        pasek_top.progress((i+1)/max(len(lista_top),1), text=f"Sprawdzam: {s['ticker']}")
+        df_t = wczytaj_notowania(s["ticker"])
+        if len(df_t) < 6:
+            continue
+        k_teraz = float(df_t["Close"].iloc[-1])
+        k_5sesji = float(df_t["Close"].iloc[-6])
+        if k_5sesji == 0:
+            continue
+        zmiana = (k_teraz - k_5sesji) / k_5sesji * 100
+        wyniki_top.append({
+            "Ticker": s["ticker"],
+            "Gielda": {"GPW": "G", "NC": "N"}.get(s["rynek"], s["rynek"]),
+            "Kurs": k_teraz,
+            "Zmiana 5D (%)": zmiana,
+        })
+    pasek_top.empty()
+
+    if not wyniki_top:
+        st.warning("Brak danych do obliczenia (sprawdz baze dane_gpw.db).")
+    else:
+        df_top = pd.DataFrame(wyniki_top)
+        top_rosnace  = df_top.sort_values("Zmiana 5D (%)", ascending=False).head(10).reset_index(drop=True)
+        top_spadajace = df_top.sort_values("Zmiana 5D (%)", ascending=True).head(10).reset_index(drop=True)
+
+        def styl_top(df_, kolor):
+            return (
+                df_.style
+                .format({"Kurs": "{:.2f}", "Zmiana 5D (%)": "{:+.1f}%"})
+                .apply(lambda col: [f"color: {kolor}; font-weight:600" if col.name=="Zmiana 5D (%)" else "" for _ in col], axis=0)
+            )
+
+        col_lewa, col_sep, col_prawa = st.columns([10, 1, 10])
+        with col_lewa:
+            st.subheader("📈 Najbardziej rosnące")
+            st.dataframe(styl_top(top_rosnace, "#4ade80"), use_container_width=True, hide_index=True)
+        with col_sep:
+            st.markdown(
+                "<div style='border-left:3px solid #888; height:420px; margin:38px auto 0;'></div>",
+                unsafe_allow_html=True
+            )
+        with col_prawa:
+            st.subheader("📉 Najbardziej spadające")
+            st.dataframe(styl_top(top_spadajace, "#f87171"), use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ZAKŁADKA 4 — SKANER
 # ══════════════════════════════════════════════════════════════════════════════
 else:
     st.header("Skaner sygnalow")
 
-    st.sidebar.markdown("# 📡 Skaner")
     st.sidebar.markdown("---")
 
     # ── DATA ──────────────────────────────────────────
