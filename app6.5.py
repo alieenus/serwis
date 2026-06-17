@@ -326,7 +326,6 @@ def wykryj_bycza_swiece(row, min_body_pct=3.0, max_dolny_cien_pct=30.0):
 # UI
 # ══════════════════════════════════════════════════════════════════════════════
 st.set_page_config(page_title="Moj serwis GPW", layout="wide")
-st.title("Moj serwis GPW")
 
 # ── TEST: data ostatniego rekordu w bazie (PKN, PKO) ──────────────────
 with st.expander("🔧 Status bazy danych (test)", expanded=True):
@@ -626,8 +625,8 @@ else:
                     "all GPW (yfinance)", "all NC (yfinance)", "all GPW+NC (yfinance)"]
     rynek_wybor = st.sidebar.radio("", opcje_rynku)
 
-    # ── KURS ──────────────────────────────────────────
-    st.sidebar.markdown("### 💰 Kurs")
+    # ── WARUNKI KURSU ─────────────────────────────────
+    st.sidebar.markdown("### 💰 Warunki")
 
     DOSTEPNE_REF = ["EMA10", "EMA20", "EMA50", "EMA150", "EMA200"]
 
@@ -638,7 +637,7 @@ else:
             return False, None, None, None
         col_a, col_b = st.sidebar.columns(2)
         with col_a:
-            okres = st.selectbox("Okres", ["D", "T", "M"], key=f"kurs_okres_{nr}")
+            okres = st.selectbox("Kurs", ["D", "T", "M"], key=f"kurs_okres_{nr}")
         with col_b:
             relacja = st.selectbox("Relacja", ["powyżej", "poniżej", "równy"], key=f"kurs_relacja_{nr}")
         ref_raw = st.sidebar.text_input(
@@ -649,7 +648,6 @@ else:
         return True, okres, relacja, ref_raw
 
     uzyj_k1, kurs_okres1, kurs_relacja1, kurs_ref1 = warunek_kurs_ui(1)
-    st.sidebar.markdown("")
     uzyj_k2, kurs_okres2, kurs_relacja2, kurs_ref2 = warunek_kurs_ui(2)
 
     # ── WSKAŹNIKI ─────────────────────────────────────
@@ -940,6 +938,7 @@ else:
                 return ""
 
             FORMAT_KOLUMN = {
+                "Kurs":           "{:.3f}",
                 "ADR20 (%)":      "{:.1f}%",
                 "Zmiana 1D":      "{:+.1f}%",
                 "Zmiana 1W":      "{:+.1f}%",
