@@ -5,6 +5,12 @@ import sqlite3
 import time
 from datetime import datetime, date, timedelta
 
+try:
+    import yfinance as yf
+    YFINANCE_OK = True
+except ImportError:
+    YFINANCE_OK = False
+
 # ══════════════════════════════════════════════════════════════════════════════
 # LISTA SPÓŁEK — parsowana z Twojego pliku
 # ══════════════════════════════════════════════════════════════════════════════
@@ -140,6 +146,56 @@ def wczytaj_notowania(ticker):
     df = df.set_index("data").sort_index()
     df.columns = ["Open","High","Low","Close","Volume"]
     return df
+
+def aktualizuj_baze_na_zywo(lista_tickerow, pasek=None):
+    """
+    Próbuje pobrać ostatnie notowania (10 dni) z yfinance dla podanej listy
+    tickerów i zapisać/nadpisać je w lokalnej bazie dane_gpw.db (UPSERT).
+    Zwraca (ok, bledy, pierwszy_blad_tekst).
+    Uwaga: zadziała tylko jeśli serwer hostingu ma dostęp sieciowy do Yahoo
+    Finance — może nie działać na każdym hostingu (np. Streamlit Cloud blokuje).
+    """
+    if not YFINANCE_OK:
+        return 0, len(lista_tickerow), "Biblioteka yfinance nie jest zainstalowana na serwerze."
+
+    con_d = get_dane_con()
+    ok, bledy = 0, 0
+    pierwszy_blad = None
+    for i, ticker in enumerate(lista_tickerow):
+        if pasek is not None:
+            pasek.progress((i+1)/max(len(lista_tickerow),1), text=f"Aktualizuję: {ticker}")
+        symbol = ticker.upper() + ".WA"
+        try:
+            df = yf.download(symbol, period="10d", interval="1d",
+                              progress=False, auto_adjust=True)
+            df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+            if df.empty:
+                continue
+            rows = []
+            for idx, row in df.iterrows():
+                if pd.isna(row.get("Close")):
+                    continue
+                rows.append((
+                    ticker.upper(),
+                    idx.strftime("%Y-%m-%d"),
+                    float(row["Open"]) if not pd.isna(row.get("Open")) else None,
+                    float(row["High"]) if not pd.isna(row.get("High")) else None,
+                    float(row["Low"]) if not pd.isna(row.get("Low")) else None,
+                    float(row["Close"]),
+                    int(row["Volume"]) if not pd.isna(row.get("Volume")) else None,
+                ))
+            con_d.executemany(
+                "INSERT OR REPLACE INTO notowania (ticker, data, open, high, low, close, volume) "
+                "VALUES (?,?,?,?,?,?,?)",
+                rows
+            )
+            con_d.commit()
+            ok += 1
+        except Exception as e:
+            bledy += 1
+            if pierwszy_blad is None:
+                pierwszy_blad = str(e)
+    return ok, bledy, pierwszy_blad
 
 def pobierz_dane(ticker, period="2y", interval="1d", data_koniec=None):
     """
@@ -327,27 +383,28 @@ def wykryj_bycza_swiece(row, min_body_pct=3.0, max_dolny_cien_pct=30.0):
 # ══════════════════════════════════════════════════════════════════════════════
 st.set_page_config(page_title="Moj serwis GPW", layout="wide")
 
-# ── TEST: data ostatniego rekordu w bazie (PKN, PKO) ──────────────────
-with st.expander("🔧 Status bazy danych (test)", expanded=True):
-    dzis = date.today()
-    for t in ["PKN", "PKO"]:
-        df_test = wczytaj_notowania(t)
-        if df_test.empty:
-            st.warning(f"{t}: brak danych w bazie")
-        else:
-            ostatnia = df_test.index[-1].date()
-            roznica = (dzis - ostatnia).days
-            if roznica <= 0:
-                znacznik = "✅ aktualne (dzisiaj)"
-            elif roznica == 1:
-                znacznik = "✅ aktualne (wczoraj)"
-            elif roznica <= 4:
-                znacznik = f"⚠️ {roznica} dni temu (mogło nie być sesji / weekend)"
-            else:
-                znacznik = f"❌ {roznica} dni temu — baza nieaktualizowana!"
-            ostatnie_daty = ", ".join(d.strftime("%Y-%m-%d") for d in df_test.index[-5:].date)
-            st.write(f"**{t}**: ostatni rekord z **{ostatnia.strftime('%Y-%m-%d')}** — {znacznik}")
-            st.caption(f"Ostatnie 5 dat w bazie: {ostatnie_daty}  (łącznie sesji w bazie: {len(df_test)})")
+_ostatnia_pkn = wczytaj_notowania("PKN")
+if not _ostatnia_pkn.empty:
+    _data_bazy = _ostatnia_pkn.index[-1].date()
+    _roznica = (date.today() - _data_bazy).days
+    _kolor = "🟢" if _roznica <= 1 else ("🟡" if _roznica <= 4 else "🔴")
+    st.sidebar.caption(f"{_kolor} Dane w bazie: {_data_bazy.strftime('%d.%m.%Y')}")
+else:
+    st.sidebar.caption("🔴 Brak danych w bazie")
+
+if st.sidebar.button("🔄 Aktualizuj teraz (na żywo)", use_container_width=True):
+    st.sidebar.caption("Test: PKN, PKO (sprawdzamy czy yfinance działa z tego serwera)")
+    pasek_live = st.sidebar.progress(0, text="Łączenie z Yahoo Finance...")
+    ok_live, bledy_live, blad_txt = aktualizuj_baze_na_zywo(["PKN", "PKO"], pasek_live)
+    pasek_live.empty()
+    wczytaj_notowania.clear()
+    if ok_live > 0:
+        st.sidebar.success(f"Zaktualizowano {ok_live} spółek ({bledy_live} błędów).")
+    else:
+        st.sidebar.error(f"Nie udało się połączyć z Yahoo Finance z tego serwera. "
+                          f"Błąd: {blad_txt or 'brak danych'}")
+
+st.sidebar.markdown("---")
 
 nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Moje spolki", "🏆 Top", "📡 Skaner"])
 
