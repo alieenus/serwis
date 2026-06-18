@@ -405,12 +405,17 @@ if st.sidebar.button("🔄 Aktualizuj teraz (na żywo)", use_container_width=Tru
     wczytaj_notowania.clear()
     if ok_live > 0:
         st.session_state["ostatnia_aktualizacja_godz"] = datetime.now().strftime("%H:%M")
-        st.sidebar.success(f"Zaktualizowano {ok_live} z {total_live} tickerów ({bledy_live} błędów).")
+        st.session_state["live_update_komunikat"] = ("success", f"Zaktualizowano {ok_live} z {total_live} tickerów ({bledy_live} błędów).")
+        st.rerun()
     else:
-        st.sidebar.error(f"Nie udało się połączyć z Yahoo Finance z tego serwera. "
-                          f"Błąd: {blad_txt or 'brak danych'}")
+        st.session_state["live_update_komunikat"] = ("error", f"Nie udało się połączyć z Yahoo Finance z tego serwera. Błąd: {blad_txt or 'brak danych'}")
+        st.rerun()
 
-nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Baza", "📋 Top Lista", "📡 Skaner"])
+if st.session_state.get("live_update_komunikat"):
+    _typ, _tekst = st.session_state.pop("live_update_komunikat")
+    getattr(st.sidebar, _typ)(_tekst)
+
+nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Baza", "⭐ Top Lista", "📡 Skaner"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ZAKŁADKA 1 — SPÓŁKA
@@ -592,7 +597,7 @@ elif nav == "📋 Baza":
 # ══════════════════════════════════════════════════════════════════════════════
 # ZAKŁADKA 3 — TOP (najbardziej rosnące / spadające w 5 sesji)
 # ══════════════════════════════════════════════════════════════════════════════
-elif nav == "📋 Top Lista":
+elif nav == "⭐ Top Lista":
     st.header("Top — gotowe listy")
 
     if "top_widok" not in st.session_state:
