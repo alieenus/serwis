@@ -163,7 +163,8 @@ def aktualizuj_baze_na_zywo(lista_tickerow, pasek=None):
     pierwszy_blad = None
     for i, ticker in enumerate(lista_tickerow):
         if pasek is not None:
-            pasek.progress((i+1)/max(len(lista_tickerow),1), text=f"Aktualizuję: {ticker}")
+            pasek.progress((i+1)/max(len(lista_tickerow),1),
+                           text=f"Aktualizuję: {ticker} ({i+1}/{len(lista_tickerow)})")
         symbol = ticker.upper() + ".WA"
         try:
             df = yf.download(symbol, period="10d", interval="1d",
@@ -396,14 +397,15 @@ else:
     st.sidebar.caption("🔴 Brak danych w bazie")
 
 if st.sidebar.button("🔄 Aktualizuj teraz (na żywo)", use_container_width=True):
-    st.sidebar.caption("Test: PKN, PKO (sprawdzamy czy yfinance działa z tego serwera)")
-    pasek_live = st.sidebar.progress(0, text="Łączenie z Yahoo Finance...")
-    ok_live, bledy_live, blad_txt = aktualizuj_baze_na_zywo(["PKN", "PKO"], pasek_live)
+    lista_live = [s["ticker"] for s in DOSTEPNE_YFINANCE]
+    total_live = len(lista_live)
+    pasek_live = st.sidebar.progress(0, text=f"Łączenie z Yahoo Finance (0/{total_live})...")
+    ok_live, bledy_live, blad_txt = aktualizuj_baze_na_zywo(lista_live, pasek_live)
     pasek_live.empty()
     wczytaj_notowania.clear()
     if ok_live > 0:
         st.session_state["ostatnia_aktualizacja_godz"] = datetime.now().strftime("%H:%M")
-        st.sidebar.success(f"Zaktualizowano {ok_live} spółek ({bledy_live} błędów).")
+        st.sidebar.success(f"Zaktualizowano {ok_live} z {total_live} tickerów ({bledy_live} błędów).")
     else:
         st.sidebar.error(f"Nie udało się połączyć z Yahoo Finance z tego serwera. "
                           f"Błąd: {blad_txt or 'brak danych'}")
