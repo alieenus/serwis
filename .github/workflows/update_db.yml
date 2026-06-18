@@ -35,4 +35,6 @@ jobs:
           git add dane_gpw.db
           # Commituj tylko jeśli plik się zmienił
           git diff --staged --quiet || git commit -m "auto: aktualizacja notowań $(date +'%Y-%m-%d')"
+          # Pobierz najnowsze zmiany z remote przed push (zapobiega non-fast-forward)
+          git pull --rebase origin main
           git push
