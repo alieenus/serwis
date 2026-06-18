@@ -254,7 +254,7 @@ def licz_wskazniki_tygodniowe(df):
 # ══════════════════════════════════════════════════════════════════════════════
 # WARUNKI SKANERA
 # ══════════════════════════════════════════════════════════════════════════════
-def sprawdz_ema_warunki(row, w1, w2, w3):
+def sprawdz_ema_warunki(row, w1, w2, w_ema20_50, w3):
     wyniki = []
     if w1:
         wyniki.append(not pd.isna(row.get("EMA10")) and not pd.isna(row.get("EMA20"))
@@ -262,6 +262,12 @@ def sprawdz_ema_warunki(row, w1, w2, w3):
     if w2:
         wyniki.append(not pd.isna(row.get("EMA50")) and not pd.isna(row.get("EMA150"))
                       and row["EMA50"] > row["EMA150"])
+    if w_ema20_50:
+        e20, e50 = row.get("EMA20"), row.get("EMA50")
+        if not pd.isna(e20) and not pd.isna(e50) and e50 != 0:
+            wyniki.append(abs(e20 - e50) / e50 * 100 <= 0.5)
+        else:
+            wyniki.append(False)
     if w3:
         e150, e200 = row.get("EMA150"), row.get("EMA200")
         if not pd.isna(e150) and not pd.isna(e200) and e200 != 0:
@@ -470,7 +476,7 @@ if nav == "🔍 Spolka":
                     st.info(f"Wolumen tygodniowy: **{kw:.1f}x** sredniej z 52 tygodni")
 
             st.subheader("Warunki EMA")
-            c1, c2, c3 = st.columns(3)
+            c1, c2, c3, c4 = st.columns(4)
             e10  = ostatni.get("EMA10")
             e20  = ostatni.get("EMA20")
             e50  = ostatni.get("EMA50")
@@ -489,6 +495,13 @@ if nav == "🔍 Spolka":
                     else:
                         st.error("❌ EMA50 ≤ EMA150")
             with c3:
+                if not pd.isna(e20) and not pd.isna(e50) and float(e50) != 0:
+                    odch_20_50 = (float(e20) - float(e50)) / float(e50) * 100
+                    if abs(odch_20_50) <= 0.5:
+                        st.success(f"✅ EMA20 ≈ EMA50 ({odch_20_50:+.2f}%)")
+                    else:
+                        st.warning(f"⚠️ EMA20 vs EMA50: {odch_20_50:+.2f}%")
+            with c4:
                 if not pd.isna(e150) and not pd.isna(e200) and float(e200) != 0:
                     odch = (float(e150) - float(e200)) / float(e200) * 100
                     if odch >= 0:
@@ -818,6 +831,7 @@ else:
     st.sidebar.markdown("### 📈 Średnie")
     war_ema1 = st.sidebar.checkbox("EMA10 > EMA20",            value=False)
     war_ema2 = st.sidebar.checkbox("EMA50 > EMA150",           value=False)
+    war_ema20_50 = st.sidebar.checkbox("EMA20 +/-0.5% od EMA50",  value=False)
     war_ema3 = st.sidebar.checkbox("EMA150 +/-0.5% od EMA200", value=False)
     war_cross20_50 = st.sidebar.checkbox("Cross EMA20/50", value=False)
     war_cross150_200 = st.sidebar.checkbox("Cross EMA150/200", value=False)
@@ -934,7 +948,7 @@ else:
                     if adr_val < min_adr or adr_val > max_adr: continue
 
                 # EMA
-                if not sprawdz_ema_warunki(row, war_ema1, war_ema2, war_ema3): continue
+                if not sprawdz_ema_warunki(row, war_ema1, war_ema2, war_ema20_50, war_ema3): continue
 
                 # crossover EMA20/EMA50 i EMA150/EMA200
                 cross_20_50, data_cross_20_50 = wykryj_crossover_ema(
