@@ -345,7 +345,9 @@ with st.expander("🔧 Status bazy danych (test)", expanded=True):
                 znacznik = f"⚠️ {roznica} dni temu (mogło nie być sesji / weekend)"
             else:
                 znacznik = f"❌ {roznica} dni temu — baza nieaktualizowana!"
+            ostatnie_daty = ", ".join(d.strftime("%Y-%m-%d") for d in df_test.index[-5:].date)
             st.write(f"**{t}**: ostatni rekord z **{ostatnia.strftime('%Y-%m-%d')}** — {znacznik}")
+            st.caption(f"Ostatnie 5 dat w bazie: {ostatnie_daty}  (łącznie sesji w bazie: {len(df_test)})")
 
 nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Moje spolki", "🏆 Top", "📡 Skaner"])
 
