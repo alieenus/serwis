@@ -38,3 +38,4 @@ jobs:
           # Commituj tylko jeśli plik się zmienił
           git diff --staged --quiet || git commit -m "auto: aktualizacja notowań $(date +'%Y-%m-%d')"
           git push origin main
+          # test
