@@ -244,6 +244,11 @@ def licz_wskazniki(df):
     if macd is not None:
         df["MACD"]   = macd.iloc[:, 0]
         df["SIGNAL"] = macd.iloc[:, 1]
+    adx = ta.adx(df["High"], df["Low"], df["Close"], length=14)
+    if adx is not None:
+        df["ADX14"] = adx.iloc[:, 0]
+        df["DMP14"] = adx.iloc[:, 1]  # +DI
+        df["DMN14"] = adx.iloc[:, 2]  # -DI
     return df
 
 def licz_wskazniki_tygodniowe(df):
@@ -352,6 +357,31 @@ def wykryj_crossover_ema(df, ema_szybka="EMA20", ema_wolna="EMA50",
         if f_prev >= w_prev and f_now < w_now:
             return "down", df.index[i].date()
     return None, None
+
+def wykryj_crossover_dmi(df, n_sesji=2):
+    """
+    Sprawdza, czy w ostatnich n_sesji nastapilo przeciecie +DI od dolu przez -DI
+    (czyli +DI <= -DI w sesji poprzedniej, a +DI > -DI w sesji biezacej -
+    sygnal "Positive -> Negative" / bycze przeciecie DMI).
+    Zwraca (True/False, data_sygnalu) dla NAJNOWSZEGO znalezionego przeciecia
+    w zakresie ostatnich n_sesji.
+    """
+    if "DMP14" not in df.columns or "DMN14" not in df.columns:
+        return False, None
+    if len(df) < n_sesji + 1:
+        return False, None
+    p = df["DMP14"]
+    n = df["DMN14"]
+    for i in range(len(df) - 1, len(df) - 1 - n_sesji, -1):
+        if i < 1:
+            break
+        p_now, n_now   = p.iloc[i],   n.iloc[i]
+        p_prev, n_prev = p.iloc[i-1], n.iloc[i-1]
+        if pd.isna(p_now) or pd.isna(n_now) or pd.isna(p_prev) or pd.isna(n_prev):
+            continue
+        if p_prev <= n_prev and p_now > n_now:
+            return True, df.index[i].date()
+    return False, None
 
 def kurs_na_poczatek_okresu(df, data_referencyjna, okres):
     """
@@ -616,13 +646,16 @@ elif nav == "⭐ Top Lista":
     if "top_widok" not in st.session_state:
         st.session_state["top_widok"] = None
 
-    col_b1, col_b2 = st.columns(2)
+    col_b1, col_b2, col_b3 = st.columns(3)
     with col_b1:
         if st.button("📊 Naj/Naj", use_container_width=True):
             st.session_state["top_widok"] = "naj_naj"
     with col_b2:
         if st.button("🔀 Cross 20/50 (3 sesje)", use_container_width=True):
             st.session_state["top_widok"] = "cross_20_50"
+    with col_b3:
+        if st.button("📐 ADX/DMI + EMA50 (2 sesje)", use_container_width=True):
+            st.session_state["top_widok"] = "adx_dmi_ema50"
 
     st.markdown("---")
 
@@ -738,6 +771,68 @@ elif nav == "⭐ Top Lista":
                 ], axis=0)
             )
             st.dataframe(styled_cross, use_container_width=True, hide_index=True)
+
+    # ── LISTA 3: ADX < 22, DMI cross (2 sesje), Max ponad EMA50 0-30% ──
+    elif st.session_state["top_widok"] == "adx_dmi_ema50":
+        st.subheader("ADX < 22  +  DMI cross (Positive ↗ Negative, 2 sesje)  +  Max > EMA50 (0–30%)")
+        st.caption("Bazuje na liście all GPW+NC (yfinance)")
+
+        wyniki_adx = []
+        pasek_adx = st.progress(0, text="Skanowanie...")
+        lista_adx = DOSTEPNE_YFINANCE
+        for i, s in enumerate(lista_adx):
+            pasek_adx.progress((i+1)/max(len(lista_adx),1), text=f"Sprawdzam: {s['ticker']}")
+            df_t = wczytaj_notowania(s["ticker"])
+            if len(df_t) < 51:
+                continue
+            df_t = licz_wskazniki(df_t)
+            if len(df_t) < 3:
+                continue
+
+            ostatni_t = df_t.iloc[-1]
+
+            # Warunek 1: ADX(14) < 22
+            adx_val = ostatni_t.get("ADX14")
+            if pd.isna(adx_val) or float(adx_val) >= 22:
+                continue
+
+            # Warunek 2: DMI cross Positive -> Negative w ostatnich 2 sesjach
+            dmi_ok, data_dmi = wykryj_crossover_dmi(df_t, n_sesji=2)
+            if not dmi_ok:
+                continue
+
+            # Warunek 5: Maksimum (High) powyzej EMA50 o 0% do 30%
+            high_val = ostatni_t.get("High")
+            ema50_val = ostatni_t.get("EMA50")
+            if pd.isna(high_val) or pd.isna(ema50_val) or float(ema50_val) == 0:
+                continue
+            odchylenie = (float(high_val) - float(ema50_val)) / float(ema50_val) * 100
+            if odchylenie < 0 or odchylenie > 30:
+                continue
+
+            sesje_temu = len(df_t) - 1 - df_t.index.get_loc(pd.Timestamp(data_dmi))
+            wyniki_adx.append({
+                "Ticker":     s["ticker"],
+                "Gielda":     {"GPW": "G", "NC": "N"}.get(s["rynek"], s["rynek"]),
+                "Kurs":       float(df_t["Close"].iloc[-1]),
+                "ADX14":      float(adx_val),
+                "Max vs EMA50 (%)": odchylenie,
+                "DMI cross":  f"{data_dmi.strftime('%d.%m')} ({sesje_temu} sesj{'a' if sesje_temu==1 else 'e' if 2<=sesje_temu<=4 else 'i'} temu)",
+                "_sort":      data_dmi,
+            })
+        pasek_adx.empty()
+
+        if not wyniki_adx:
+            st.info("Brak spolek spelniajacych warunki ADX/DMI/EMA50.")
+        else:
+            df_adx = pd.DataFrame(wyniki_adx).sort_values("_sort", ascending=False).drop(columns=["_sort"]).reset_index(drop=True)
+            styled_adx = (
+                df_adx.style
+                .format({"Kurs": "{:.3f}", "ADX14": "{:.1f}", "Max vs EMA50 (%)": "{:+.1f}%"})
+                .apply(lambda col: ["color: #4ade80; font-weight:600" for _ in col]
+                       if col.name == "Max vs EMA50 (%)" else ["" for _ in col], axis=0)
+            )
+            st.dataframe(styled_adx, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ZAKŁADKA 4 — SKANER
