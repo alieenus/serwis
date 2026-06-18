@@ -388,7 +388,10 @@ if not _ostatnia_pkn.empty:
     _data_bazy = _ostatnia_pkn.index[-1].date()
     _roznica = (date.today() - _data_bazy).days
     _kolor = "🟢" if _roznica <= 1 else ("🟡" if _roznica <= 4 else "🔴")
-    st.sidebar.caption(f"{_kolor} Dane w bazie: {_data_bazy.strftime('%d.%m.%Y')}")
+    _godzina_info = ""
+    if st.session_state.get("ostatnia_aktualizacja_godz"):
+        _godzina_info = f" ({st.session_state['ostatnia_aktualizacja_godz']})"
+    st.sidebar.caption(f"{_kolor} Dane w bazie: {_data_bazy.strftime('%d.%m.%Y')}{_godzina_info}")
 else:
     st.sidebar.caption("🔴 Brak danych w bazie")
 
@@ -399,14 +402,13 @@ if st.sidebar.button("🔄 Aktualizuj teraz (na żywo)", use_container_width=Tru
     pasek_live.empty()
     wczytaj_notowania.clear()
     if ok_live > 0:
+        st.session_state["ostatnia_aktualizacja_godz"] = datetime.now().strftime("%H:%M")
         st.sidebar.success(f"Zaktualizowano {ok_live} spółek ({bledy_live} błędów).")
     else:
         st.sidebar.error(f"Nie udało się połączyć z Yahoo Finance z tego serwera. "
                           f"Błąd: {blad_txt or 'brak danych'}")
 
-st.sidebar.markdown("---")
-
-nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Moje spolki", "🏆 Top", "📡 Skaner"])
+nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Baza", "📋 Top Lista", "📡 Skaner"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ZAKŁADKA 1 — SPÓŁKA
@@ -530,7 +532,7 @@ if nav == "🔍 Spolka":
 # ══════════════════════════════════════════════════════════════════════════════
 # ZAKŁADKA 2 — MOJE SPÓŁKI
 # ══════════════════════════════════════════════════════════════════════════════
-elif nav == "📋 Moje spolki":
+elif nav == "📋 Baza":
     st.header("Moje spolki — lista i status danych")
     st.caption(f"Lacznie: {len(WSZYSTKIE_SPOLKI)} spolek z Twojej listy")
 
@@ -588,7 +590,7 @@ elif nav == "📋 Moje spolki":
 # ══════════════════════════════════════════════════════════════════════════════
 # ZAKŁADKA 3 — TOP (najbardziej rosnące / spadające w 5 sesji)
 # ══════════════════════════════════════════════════════════════════════════════
-elif nav == "🏆 Top":
+elif nav == "📋 Top Lista":
     st.header("Top — gotowe listy")
 
     if "top_widok" not in st.session_state:
