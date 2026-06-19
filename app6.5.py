@@ -167,8 +167,10 @@ def aktualizuj_baze_na_zywo(lista_tickerow, pasek=None):
                            text=f"Aktualizuję: {ticker} ({i+1}/{len(lista_tickerow)})")
         symbol = ticker.upper() + ".WA"
         try:
-            df = yf.download(symbol, period="10d", interval="1d",
-                              progress=False, auto_adjust=True)
+            _start = date.today() - timedelta(days=14)
+            _end   = date.today() + timedelta(days=1)
+            df = yf.download(symbol, start=_start, end=_end,
+                              interval="1d", progress=False, auto_adjust=True)
             df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
             if df.empty:
                 continue

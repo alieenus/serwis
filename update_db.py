@@ -1,7 +1,10 @@
 """
 update_db.py — CODZIENNY skrypt dopisujący ostatnie notowania do bazy.
 Uruchamiany automatycznie przez GitHub Actions po sesji GPW (ok. 18:00).
-Pobiera ostatnie 10 dni dla każdego tickera i robi UPSERT (bez duplikatów).
+
+Kluczowa zmiana: zamiast period="10d" używamy start/end z jawną datą end=jutro,
+co zmusza Yahoo Finance do zwrócenia finalnych danych dziennych (daily close)
+zamiast "live intraday snapshot" dla bieżącego dnia giełdowego w strefie ET.
 
 Wymagania: pip install yfinance pandas
 """
@@ -10,10 +13,10 @@ import sqlite3
 import time
 import pandas as pd
 import yfinance as yf
+from datetime import date, timedelta
 
 DB_PATH = "dane_gpw.db"
 AVAILABLE_TICKERS_FILE = "available_tickers.csv"
-DNI_WSTECZ = "10d"
 
 
 def wczytaj_tickery(path=AVAILABLE_TICKERS_FILE):
@@ -58,7 +61,11 @@ def zapisz(con, ticker_bare, df):
 
 def main():
     tickery = wczytaj_tickery()
-    print(f"Aktualizacja {len(tickery)} tickerow (ostatnie {DNI_WSTECZ})...")
+    # Pobieramy 14 dni wstecz z jawnym end=jutro — to wymusza Yahoo do zwrócenia
+    # finalnych danych dziennych (daily close) zamiast intraday snapshot
+    start = date.today() - timedelta(days=14)
+    end   = date.today() + timedelta(days=1)
+    print(f"Aktualizacja {len(tickery)} tickerow ({start} -> {end})...")
 
     con = sqlite3.connect(DB_PATH)
 
@@ -66,8 +73,8 @@ def main():
     for i, symbol in enumerate(tickery, 1):
         ticker_bare = symbol[:-3]
         try:
-            df = yf.download(symbol, period=DNI_WSTECZ, interval="1d",
-                              progress=False, auto_adjust=True)
+            df = yf.download(symbol, start=start, end=end,
+                             interval="1d", progress=False, auto_adjust=True)
             n = zapisz(con, ticker_bare, df)
             ok += 1
             print(f"[{i}/{len(tickery)}] {symbol}: +{n} rekordów")
