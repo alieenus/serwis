@@ -453,6 +453,34 @@ if st.session_state.get("live_update_komunikat"):
     _typ, _tekst = st.session_state.pop("live_update_komunikat")
     getattr(st.sidebar, _typ)(_tekst)
 
+if st.sidebar.button("🔍 Sprawdź kurs w bazie", use_container_width=True):
+    _godz_sprawdz = datetime.now().strftime("%H:%M")
+    _info_linie = []
+    _kursy = {}
+    for _t in ["PKN", "CBF"]:
+        _df_s = wczytaj_notowania(_t)
+        if _df_s.empty:
+            _info_linie.append(f"**{_t}**: brak w bazie")
+        else:
+            _d = _df_s.index[-1].date()
+            _k = float(_df_s["Close"].iloc[-1])
+            _kursy[_t] = (_d, _k)
+            _info_linie.append(f"**{_t}**: {_d.strftime('%d.%m')} | {_k:.2f} zł")
+    if len(_kursy) == 2 and _kursy["PKN"][0] == _kursy["CBF"][0]:
+        _status = "✅ obie spółki z tej samej sesji"
+    elif len(_kursy) == 2:
+        _status = "⚠️ różne daty sesji!"
+    else:
+        _status = "⚠️ brak danych dla jednej spółki"
+    st.session_state["kurs_sprawdz_komunikat"] = (
+        "\n".join(_info_linie) + f"\n{_status} (sprawdzono o {_godz_sprawdz})"
+    )
+    st.rerun()
+
+if st.session_state.get("kurs_sprawdz_komunikat"):
+    _txt = st.session_state.pop("kurs_sprawdz_komunikat")
+    st.sidebar.info(_txt)
+
 nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Baza", "⭐ Top Lista", "📡 Skaner"])
 
 # ══════════════════════════════════════════════════════════════════════════════
