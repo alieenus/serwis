@@ -789,37 +789,51 @@ elif nav == "⭐ Top Lista":
             if len(df_t) < 3:
                 continue
 
-            ostatni_t = df_t.iloc[-1]
+            # Sprawdzamy ostatnie 2 sesje osobno — każda sesja to potencjalny sygnał
+            for sesja_offset in [0, 1]:  # 0 = ostatnia sesja, 1 = przedostatnia
+                idx_sesji = len(df_t) - 1 - sesja_offset
+                if idx_sesji < 2:
+                    continue
 
-            # Warunek 1: ADX(14) < 22
-            adx_val = ostatni_t.get("ADX14")
-            if pd.isna(adx_val) or float(adx_val) >= 22:
-                continue
+                df_do_sesji = df_t.iloc[:idx_sesji + 1]
+                row_sesji = df_do_sesji.iloc[-1]
+                data_sesji = df_do_sesji.index[-1].date()
 
-            # Warunek 2: DMI cross Positive -> Negative w ostatnich 2 sesjach
-            dmi_ok, data_dmi = wykryj_crossover_dmi(df_t, n_sesji=2)
-            if not dmi_ok:
-                continue
+                # Warunek 1: ADX(14) < 22 na tej sesji
+                adx_val = row_sesji.get("ADX14")
+                if pd.isna(adx_val) or float(adx_val) >= 22:
+                    continue
 
-            # Warunek 5: Maksimum (High) powyzej EMA50 o 0% do 30%
-            high_val = ostatni_t.get("High")
-            ema50_val = ostatni_t.get("EMA50")
-            if pd.isna(high_val) or pd.isna(ema50_val) or float(ema50_val) == 0:
-                continue
-            odchylenie = (float(high_val) - float(ema50_val)) / float(ema50_val) * 100
-            if odchylenie < 0 or odchylenie > 30:
-                continue
+                # Warunek 2: DMI cross +DI przecina -DI od dolu DOKŁADNIE na tej sesji
+                p_now  = row_sesji.get("DMP14")
+                n_now  = row_sesji.get("DMN14")
+                p_prev = df_do_sesji["DMP14"].iloc[-2]
+                n_prev = df_do_sesji["DMN14"].iloc[-2]
+                if any(pd.isna(v) for v in [p_now, n_now, p_prev, n_prev]):
+                    continue
+                if not (float(p_prev) <= float(n_prev) and float(p_now) > float(n_now)):
+                    continue
 
-            sesje_temu = len(df_t) - 1 - df_t.index.get_loc(pd.Timestamp(data_dmi))
-            wyniki_adx.append({
-                "Ticker":     s["ticker"],
-                "Gielda":     {"GPW": "G", "NC": "N"}.get(s["rynek"], s["rynek"]),
-                "Kurs":       float(df_t["Close"].iloc[-1]),
-                "ADX14":      float(adx_val),
-                "Max vs EMA50 (%)": odchylenie,
-                "DMI cross":  f"{data_dmi.strftime('%d.%m')} ({sesje_temu} sesj{'a' if sesje_temu==1 else 'e' if 2<=sesje_temu<=4 else 'i'} temu)",
-                "_sort":      data_dmi,
-            })
+                # Warunek 5: Maksimum (High) powyzej EMA50 o 0% do 30% na tej sesji
+                high_val  = row_sesji.get("High")
+                ema50_val = row_sesji.get("EMA50")
+                if pd.isna(high_val) or pd.isna(ema50_val) or float(ema50_val) == 0:
+                    continue
+                odchylenie = (float(high_val) - float(ema50_val)) / float(ema50_val) * 100
+                if odchylenie < 0 or odchylenie > 30:
+                    continue
+
+                sesje_temu = sesja_offset
+                etykieta = "dzisiaj" if sesje_temu == 0 else "wczoraj"
+                wyniki_adx.append({
+                    "Ticker":           s["ticker"],
+                    "Gielda":           {"GPW": "G", "NC": "N"}.get(s["rynek"], s["rynek"]),
+                    "Kurs":             float(df_t["Close"].iloc[-1]),
+                    "ADX14":            float(adx_val),
+                    "Max vs EMA50 (%)": odchylenie,
+                    "DMI cross":        f"{data_sesji.strftime('%d.%m')} ({etykieta})",
+                    "_sort":            data_sesji,
+                })
         pasek_adx.empty()
 
         if not wyniki_adx:
