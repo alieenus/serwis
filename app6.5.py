@@ -460,26 +460,24 @@ if st.sidebar.button("🔍 Sprawdź kurs w bazie", use_container_width=True):
     for _t in ["PKN", "CBF"]:
         _df_s = wczytaj_notowania(_t)
         if _df_s.empty:
-            _info_linie.append(f"**{_t}**: brak w bazie")
+            _info_linie.append(f"{_t}: brak")
         else:
             _d = _df_s.index[-1].date()
             _k = float(_df_s["Close"].iloc[-1])
             _kursy[_t] = (_d, _k)
-            _info_linie.append(f"**{_t}**: {_d.strftime('%d.%m')} | {_k:.2f} zł")
+            _info_linie.append(f"{_t}: {_d.strftime('%d.%m')} {_k:.2f}")
     if len(_kursy) == 2 and _kursy["PKN"][0] == _kursy["CBF"][0]:
-        _status = "✅ obie spółki z tej samej sesji"
+        _status = f"✅ {_godz_sprawdz}"
     elif len(_kursy) == 2:
-        _status = "⚠️ różne daty sesji!"
+        _status = f"⚠️ różne daty!"
     else:
-        _status = "⚠️ brak danych dla jednej spółki"
-    st.session_state["kurs_sprawdz_komunikat"] = (
-        "\n".join(_info_linie) + f"\n{_status} (sprawdzono o {_godz_sprawdz})"
-    )
+        _status = "⚠️ brak danych"
+    st.session_state["kurs_sprawdz_komunikat"] = " | ".join(_info_linie) + " " + _status
     st.rerun()
 
 if st.session_state.get("kurs_sprawdz_komunikat"):
     _txt = st.session_state.pop("kurs_sprawdz_komunikat")
-    st.sidebar.info(_txt)
+    st.sidebar.markdown(f"<small>{_txt}</small>", unsafe_allow_html=True)
 
 nav = st.sidebar.radio("", ["🔍 Spolka", "📋 Baza", "⭐ Top Lista", "📡 Skaner"])
 
